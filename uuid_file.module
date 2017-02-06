@@ -1,0 +1,129 @@
+<?php
+/**
+ * @file
+ * UUID Files module file.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function uuid_file_menu() {
+  $items = array();
+  
+  $items['file-uuid'] = array(
+    'title' => 'File download',
+    'page callback' => 'uuid_file_stream_download',
+    'page arguments' => array(1),
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  
+  return $items;
+}
+
+/**
+ * Implements hook_stream_wrappers(). 
+ */
+function uuid_file_stream_wrappers() {
+  return array(
+    'uuid' => array(
+      'name' => t('UUID File Stream'),
+      'class' => 'UuidFileStreamWrapper',
+      'description' => t('Local Files which are using their UUID as resource locator.'),
+      'type' => STREAM_WRAPPERS_LOCAL_NORMAL,
+    ),
+  );
+}
+
+/**
+ * Menu callback for UUID file stream. 
+ */
+function uuid_file_stream_download($pseudo) {
+  $pieces = explode('.', $pseudo);
+  $uuid = array_shift($pieces);
+  
+  $uri = db_select('file_managed', 'f')
+  ->fields('f', array('uri'))
+  ->condition('f.uuid', $uuid)
+  ->execute()->fetchField();
+  
+  if ($uri) {
+    $scheme = file_uri_scheme($uri);
+    $target = file_uri_target($uri);
+    $args = explode('/', $target);
+    array_unshift($args, $scheme);
+    
+    if (isset($_GET['style']) && ($style = image_style_load($_GET['style']))) {
+      array_unshift($args, $style);
+      call_user_func_array('image_style_deliver', $args);
+    }
+    else {
+      call_user_func_array('file_download', $args);
+    }
+  }
+  
+  return MENU_NOT_FOUND;
+}
+
+/**
+ * Returns a file object by a given uri.
+ * 
+ * @param $uri
+ *  A string containing a valid uri.
+ * 
+ * @return
+ *  A file entity object, FALSE when there's no file for the given uri.
+ */
+function uuid_file_by_uri($uri) {
+  $files = &drupal_static(__FUNCTION__, array());
+  if (isset($files[$uri])) {
+    return $files[$uri];
+  }
+  
+  if (strpos($uri, '://styles/')) {
+    // Obviously this is an image style uri.
+    // We have to manually extract the file's uri.
+    $scheme = file_uri_scheme($uri);
+    $target = file_uri_target($uri);
+    $pieces = explode('/' . $scheme . '/', $target);
+    // This should be the file target.
+    $target = !empty($pieces[1]) ? $pieces[1] : $target;
+    // Try to re-construct the source uri.
+    $uri = $scheme . '://' . $target;
+  }
+  
+  $files[$uri] = FALSE;
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'file');
+  $query->propertyCondition('uri', $uri);
+  $result = $query->execute();
+  if (!empty($result['file'])) {
+    $stub = reset($result['file']);
+    $files[$uri] = file_load($stub->fid);
+  }
+  
+  return $files[$uri];
+}
+
+/**
+ * Returns a possible file extension for a given MIME type.
+ * 
+ * @param $mime
+ *  A valid MIME type as string.
+ * 
+ * @return
+ *  When found, a possible file extension as string.
+ *  Otherwise, the return value is an empty string.
+ */
+function uuid_file_extension_by_mime($mime) {
+  $mapping = &drupal_static(__FUNCTION__, array());
+  if (!isset($mapping[$mime])) {
+    $mapping[$mime] = '';
+    require_once 'includes/file.mimetypes.inc';
+    $mimetype_mapping = file_mimetype_mapping();
+    foreach ($mimetype_mapping['extensions'] as $extension => $mapkey) {
+      $mapping[$mimetype_mapping['mimetypes'][$mapkey]] = $extension;
+    }
+  }
+  return $mapping[$mime];
+}

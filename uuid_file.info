@@ -1,0 +1,10 @@
+name = UUID Files
+description = Further enhancements for UUID files.
+package = UUID
+
+dependencies[] = uuid
+
+files[] = uuid_file.stream.inc
+
+core = 7.x
+version = "7.x-1.x-dev"
